@@ -26,7 +26,9 @@ export default function Depenses({ user }) {
   const [filterYear, setFilterYear] = useState(new Date().getFullYear())
   const [filterCat, setFilterCat] = useState('')
   const { moyens: moyensDB } = useMoyensPaiement(user.id)
-  const MOYENS_LIST = moyensDB.length > 0 ? moyensDB.map(m => m.nom) : ['Carte SG','Carte Trade','Espèces','Virement']
+  const MOYENS_DEFAUT_NOMS = ['Carte SG', 'Carte Trade', 'Espèces', 'Virement']
+  const MOYENS_CUSTOM_NOMS = moyensDB.filter(m => !MOYENS_DEFAUT_NOMS.includes(m.nom)).map(m => m.nom)
+  const MOYENS_LIST = [...MOYENS_DEFAUT_NOMS, ...MOYENS_CUSTOM_NOMS]
   const [form, setForm] = useState({ date: new Date().toISOString().split('T')[0], montant: '', libelle: '', categorie: '', moyen_paiement: 'Carte SG', note: '' })
 
   useEffect(() => { fetchDepenses(); fetchCategories() }, [filterMonth, filterYear])

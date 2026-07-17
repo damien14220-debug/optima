@@ -86,10 +86,10 @@ export default function Parametres({ user, darkMode, setDarkMode }) {
       <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--color-text)', marginBottom: 16 }}>Paramètres</h1>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 12, background: 'var(--color-surface)', marginBottom: 16, overflowX: 'auto' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, padding: 4, borderRadius: 12, background: 'var(--color-surface)', marginBottom: 16 }}>
         {[['compte','👤 Compte'],['categories','🏷️ Catégories'],['abonnements','🔄 Abonnements'],['paiements','💳 Paiements']].map(([t,l]) => (
           <button key={t} onClick={() => setTab(t)}
-            style={{ flex: 1, minWidth: 80, padding: '8px 4px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap',
+            style={{ padding: '10px 8px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500,
               background: tab === t ? '#6366f1' : 'transparent', color: tab === t ? 'white' : 'var(--color-text-muted)' }}>
             {l}
           </button>
