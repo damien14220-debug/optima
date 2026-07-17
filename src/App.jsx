@@ -5,7 +5,8 @@ import Dashboard from './pages/Dashboard'
 import Depenses from './pages/Depenses'
 import Revenus from './pages/Revenus'
 import Budget from './pages/Budget'
-import Investissements from './pages/Investissements'
+import Patrimoine from './pages/Patrimoine'
+import CompteJoint from './pages/CompteJoint'
 import Statistiques from './pages/Statistiques'
 import Parametres from './pages/Parametres'
 
@@ -14,12 +15,13 @@ const NAV_ITEMS = [
   { id: 'depenses', label: 'Dépenses', icon: '💸' },
   { id: 'revenus', label: 'Revenus', icon: '💰' },
   { id: 'budget', label: 'Budget', icon: '📊' },
-  { id: 'investissements', label: 'Investir', icon: '📈' },
+  { id: 'patrimoine', label: 'Patrimoine', icon: '📈' },
+  { id: 'joint', label: 'Commun', icon: '🤝' },
   { id: 'statistiques', label: 'Stats', icon: '📉' },
   { id: 'parametres', label: 'Réglages', icon: '⚙️' },
 ]
 
-const SIDEBAR_W = 240
+const SIDEBAR_W = 220
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -64,7 +66,8 @@ export default function App() {
       case 'depenses': return <Depenses user={user} />
       case 'revenus': return <Revenus user={user} />
       case 'budget': return <Budget user={user} />
-      case 'investissements': return <Investissements user={user} />
+      case 'patrimoine': return <Patrimoine user={user} />
+      case 'joint': return <CompteJoint user={user} />
       case 'statistiques': return <Statistiques user={user} />
       case 'parametres': return <Parametres user={user} darkMode={darkMode} setDarkMode={setDarkMode} />
       default: return <Dashboard user={user} />
@@ -74,7 +77,7 @@ export default function App() {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--color-bg)' }}>
 
-      {/* Sidebar — desktop uniquement */}
+      {/* Sidebar desktop */}
       {!isMobile && (
         <aside style={{
           width: SIDEBAR_W, minWidth: SIDEBAR_W, position: 'fixed',
@@ -83,32 +86,32 @@ export default function App() {
           borderRight: '1px solid var(--color-border)',
           display: 'flex', flexDirection: 'column',
         }}>
-          <div style={{ padding: '20px', borderBottom: '1px solid var(--color-border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 18 }}>O</div>
+          <div style={{ padding: '20px 16px', borderBottom: '1px solid var(--color-border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 17, flexShrink: 0 }}>O</div>
               <div>
-                <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-text)' }}>Optima</div>
-                <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Budget</div>
+                <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--color-text)' }}>Optima</div>
+                <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>Budget</div>
               </div>
             </div>
           </div>
-          <nav style={{ flex: 1, padding: '12px', overflowY: 'auto' }}>
+          <nav style={{ flex: 1, padding: '10px 8px', overflowY: 'auto' }}>
             {NAV_ITEMS.map(item => (
               <button key={item.id} onClick={() => setPage(item.id)}
                 style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '10px 12px', borderRadius: 12, border: 'none', cursor: 'pointer',
-                  marginBottom: 4, fontSize: 14, fontWeight: 500, textAlign: 'left',
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '9px 12px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                  marginBottom: 2, fontSize: 13, fontWeight: 500, textAlign: 'left',
                   background: page === item.id ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'transparent',
                   color: page === item.id ? 'white' : 'var(--color-text-muted)',
                   transition: 'all 0.15s',
                 }}>
-                <span style={{ fontSize: 16 }}>{item.icon}</span>
+                <span style={{ fontSize: 15 }}>{item.icon}</span>
                 {item.label}
               </button>
             ))}
           </nav>
-          <div style={{ padding: '12px 16px', borderTop: '1px solid var(--color-border)' }}>
+          <div style={{ padding: '10px 16px', borderTop: '1px solid var(--color-border)' }}>
             <div style={{ fontSize: 11, color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</div>
           </div>
         </aside>
@@ -125,7 +128,7 @@ export default function App() {
         {/* Header mobile */}
         {isMobile && (
           <div style={{
-            position: 'sticky', top: 0, zIndex: 10, padding: '12px 16px',
+            position: 'sticky', top: 0, zIndex: 10, padding: '10px 16px',
             borderBottom: '1px solid var(--color-border)',
             background: 'var(--color-surface)',
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -134,12 +137,11 @@ export default function App() {
               <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 14 }}>O</div>
               <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-text)' }}>Optima</span>
             </div>
-            <span style={{ fontSize: 14, color: 'var(--color-text)' }}>
+            <span style={{ fontSize: 13, color: 'var(--color-text)' }}>
               {NAV_ITEMS.find(n => n.id === page)?.icon} {NAV_ITEMS.find(n => n.id === page)?.label}
             </span>
           </div>
         )}
-
         {renderPage()}
       </main>
 
@@ -154,12 +156,12 @@ export default function App() {
           {NAV_ITEMS.map(item => (
             <button key={item.id} onClick={() => setPage(item.id)}
               style={{
-                flex: 1, minWidth: 56, display: 'flex', flexDirection: 'column',
-                alignItems: 'center', padding: '8px 4px', border: 'none',
+                flex: 1, minWidth: 52, display: 'flex', flexDirection: 'column',
+                alignItems: 'center', padding: '6px 2px 8px', border: 'none',
                 background: 'transparent', cursor: 'pointer',
                 color: page === item.id ? '#6366f1' : 'var(--color-text-muted)',
               }}>
-              <span style={{ fontSize: 20, lineHeight: 1 }}>{item.icon}</span>
+              <span style={{ fontSize: 19, lineHeight: 1 }}>{item.icon}</span>
               <span style={{ fontSize: 9, marginTop: 2, fontWeight: 500 }}>{item.label}</span>
               {page === item.id && <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#6366f1', marginTop: 2 }} />}
             </button>
