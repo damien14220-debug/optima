@@ -28,6 +28,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState('dashboard')
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  const [isPartner, setIsPartner] = useState(false)
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('optima-theme') !== 'light')
 
   useEffect(() => {
@@ -40,6 +41,12 @@ export default function App() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
       setLoading(false)
+    })
+    supabase.auth.getUser().then(({ data: { user: u } }) => {
+      if (!u) return
+      supabase.from('partages_joint').select('statut').eq('partner_id', u.id).single().then(({ data }) => {
+        if (data?.statut === 'accepte') setIsPartner(true)
+      })
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
@@ -73,6 +80,8 @@ export default function App() {
       default: return <Dashboard user={user} />
     }
   }
+
+  const visibleNav = isPartner ? NAV_ITEMS.filter(n => n.id === 'joint') : NAV_ITEMS
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--color-bg)' }}>
@@ -138,7 +147,7 @@ export default function App() {
               <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-text)' }}>Optima</span>
             </div>
             <span style={{ fontSize: 13, color: 'var(--color-text)' }}>
-              {NAV_ITEMS.find(n => n.id === page)?.icon} {NAV_ITEMS.find(n => n.id === page)?.label}
+              {visibleNav.find(n => n.id === page)?.icon} {visibleNav.find(n => n.id === page)?.label}
             </span>
           </div>
         )}
@@ -153,7 +162,7 @@ export default function App() {
           borderTop: '1px solid var(--color-border)',
           display: 'flex', overflowX: 'auto',
         }}>
-          {NAV_ITEMS.map(item => (
+          {visibleNav.map(item => (
             <button key={item.id} onClick={() => setPage(item.id)}
               style={{
                 flex: 1, minWidth: 52, display: 'flex', flexDirection: 'column',
