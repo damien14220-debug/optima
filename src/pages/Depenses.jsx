@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { useMoyensPaiement } from '../hooks/useMoyensPaiement'
 
 export const CATEGORIES = [
   { id: 'transport', label: 'Transport', icon: '🚗', color: '#6366f1' },
@@ -11,7 +12,7 @@ export const CATEGORIES = [
   { id: 'divers', label: 'Divers', icon: '📦', color: '#94a3b8' },
 ]
 
-const MOYENS = ['Carte SG', 'Carte Trade', 'Espèces', 'Virement']
+// moyens loaded dynamically
 const MOIS_LABELS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre']
 const inputStyle = { width: '100%', padding: '8px 12px', borderRadius: 8, fontSize: 14, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }
 
@@ -24,6 +25,8 @@ export default function Depenses({ user }) {
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth() + 1)
   const [filterYear, setFilterYear] = useState(new Date().getFullYear())
   const [filterCat, setFilterCat] = useState('')
+  const { moyens: moyensDB } = useMoyensPaiement(user.id)
+  const MOYENS_LIST = moyensDB.length > 0 ? moyensDB.map(m => m.nom) : ['Carte SG','Carte Trade','Espèces','Virement']
   const [form, setForm] = useState({ date: new Date().toISOString().split('T')[0], montant: '', libelle: '', categorie: '', moyen_paiement: 'Carte SG', note: '' })
 
   useEffect(() => { fetchDepenses(); fetchCategories() }, [filterMonth, filterYear])
@@ -102,7 +105,7 @@ export default function Depenses({ user }) {
               </div>
               <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 6 }}>Moyen de paiement</label>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {MOYENS.map(m => <button key={m} type="button" onClick={() => setForm({...form, moyen_paiement: m})}
+                  {MOYENS_LIST.map(m => <button key={m} type="button" onClick={() => setForm({...form, moyen_paiement: m})}
                     style={{ padding: '6px 12px', borderRadius: 8, border: form.moyen_paiement === m ? 'none' : '1px solid var(--color-border)', background: form.moyen_paiement === m ? '#6366f1' : 'transparent', color: form.moyen_paiement === m ? 'white' : 'var(--color-text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 500 }}>{m}</button>)}
                 </div>
               </div>
