@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { useMoyensPaiement } from '../hooks/useMoyensPaiement'
 
 const ICONES_CAT = ['🚗','🏍️','🚌','📱','💻','🎵','🎬','🏥','🛒','🍕','🎉','✈️','🏠','💡','📦','🎓','💪','🐶','👗','⚽','🎮','📚','💈','🧴','🔧','💰','🏦','📋','🤝','👩']
 const ICONES_PAY = ['💳','💵','🔄','📲','🏦','💶','💸','🪙','📱','💎']
@@ -38,6 +39,11 @@ export default function Parametres({ user, darkMode, setDarkMode }) {
   const [catForm, setCatForm] = useState({ nom: '', icone: '📦', couleur: '#6366f1' })
   const [abonForm, setAbonForm] = useState({ nom: '', montant: '', jour_prelevement: 1, moyen_paiement: 'Carte SG', categorie: 'abonnements', actif: true, note: '' })
   const [moyenForm, setMoyenForm] = useState({ nom: '', type: 'carte', icone: '💳', couleur: '#6366f1', actif: true })
+
+  const { moyens: moyensDB } = useMoyensPaiement(user.id)
+  const MOYENS_DEFAUT_NOMS = ['Carte SG', 'Carte Trade', 'Espèces', 'Virement']
+  const MOYENS_CUSTOM_NOMS = moyensDB.filter(m => !MOYENS_DEFAUT_NOMS.includes(m.nom)).map(m => m.nom)
+  const TOUS_MOYENS_NOMS = [...MOYENS_DEFAUT_NOMS, ...MOYENS_CUSTOM_NOMS]
 
   useEffect(() => { fetchCategories(); fetchAbonnements(); fetchMoyens() }, [])
 
@@ -79,7 +85,9 @@ export default function Parametres({ user, darkMode, setDarkMode }) {
   const inputStyle = { width: '100%', padding: '8px 12px', borderRadius: 8, fontSize: 14, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }
   const cardStyle = { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 16, padding: 16 }
   const totalAbonnements = abonnements.filter(a => a.actif).reduce((s, a) => s + a.montant, 0)
-  const allMoyens = moyens.length > 0 ? moyens : MOYENS_DEFAUT
+  const moyensCustomNoms = moyens.map(m => m.nom)
+  const moyensDefautFiltres = MOYENS_DEFAUT.filter(m => !moyensCustomNoms.includes(m.nom))
+  const allMoyens = [...moyensDefautFiltres, ...moyens]
 
   return (
     <div style={{ padding: 16, maxWidth: 700, margin: '0 auto' }}>
@@ -207,7 +215,7 @@ export default function Parametres({ user, darkMode, setDarkMode }) {
                     <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Jour prélèvement</label><input type="number" min="1" max="28" required value={abonForm.jour_prelevement} onChange={e => setAbonForm({...abonForm, jour_prelevement: parseInt(e.target.value)})} style={inputStyle} /></div>
                     <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Carte</label>
                       <select value={abonForm.moyen_paiement} onChange={e => setAbonForm({...abonForm, moyen_paiement: e.target.value})} style={inputStyle}>
-                        {allMoyens.map(m => <option key={m.nom || m.id}>{m.nom}</option>)}
+                        {TOUS_MOYENS_NOMS.map(m => <option key={m}>{m}</option>)}
                       </select>
                     </div>
                   </div>
