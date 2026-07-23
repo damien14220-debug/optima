@@ -295,13 +295,7 @@ export default function CompteJoint({ user }) {
   const inp = { width: '100%', padding: '8px 12px', borderRadius: 8, fontSize: 14, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }
   const card = { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 16 }
 
-  // Plus besoin de PayeurBtn — la carte détermine qui a payé
-  // On garde juste un affichage info
-  const PayeurInfo = ({ form }) => {
-    const payeur = getPayeurFromMoyen(form.moyen_paiement)
-    if (payeur === 'commun' || !form.moyen_paiement) return null
-    return null // L'info est déjà dans MoyenSelect
-  }
+
 
   // ── Composants simples ──
   const PayeurBtn = ({ form, setForm }) => (
@@ -789,7 +783,7 @@ export default function CompteJoint({ user }) {
         <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Libellé</label><input required value={depForm.libelle} onChange={e => setDepForm(f => ({...f, libelle: e.target.value}))} placeholder="Ex: Courses, Restaurant..." style={inp} /></div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Catégorie</label><select value={depForm.categorie} onChange={e => setDepForm(f => ({...f, categorie: e.target.value}))} style={inp}>{CATS_JOINT.map(c => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}</select></div>
-          <MoyenSelect form={depForm} setForm={setDepForm} />
+          <MoyenSimple form={depForm} setForm={setDepForm} />
         </div>
         {!moyensCommuns.includes(depForm.moyen_paiement) && <PartInput value={depForm.part_moi} onChange={v => setDepForm(f => ({...f, part_moi: v}))} montant={depForm.montant} />}
         {!editDep && !moyensCommuns.includes(depForm.moyen_paiement) && (
@@ -808,7 +802,7 @@ export default function CompteJoint({ user }) {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Jour prélèvement</label><input type="number" min="1" max="28" required value={abonForm.jour_prelevement} onChange={e => setAbonForm(f => ({...f, jour_prelevement: parseInt(e.target.value)}))} style={inp} /></div>
-          <MoyenSelect form={abonForm} setForm={setAbonForm} />
+          <MoyenSimple form={abonForm} setForm={setAbonForm} />
         </div>
         <PartInput value={abonForm.part_damien} onChange={v => setAbonForm(f => ({...f, part_damien: v}))} montant={abonForm.montant} />
         <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Note</label><input value={abonForm.note} onChange={e => setAbonForm(f => ({...f, note: e.target.value}))} placeholder="Optionnel..." style={inp} /></div>
