@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import FormModal from '../components/FormModal'
+import { useMoyensPaiement } from '../hooks/useMoyensPaiement'
 import PartInput from '../components/PartInput'
 
 const CATS_JOINT = [
@@ -96,6 +97,12 @@ export default function CompteJoint({ user }) {
   // Config form
   const [configForm, setConfigForm] = useState({ nom_owner: '', email_owner: '', nom_partner: '', email_partner: '', moyens_communs: [] })
   const [moyensJointForm, setMoyensJointForm] = useState([])
+  const { moyens: moyensPerso } = useMoyensPaiement(user.id)
+  const MOYENS_PERSO_DEFAUT = ['Carte SG', 'Carte Trade', 'Espèces', 'Virement']
+  const tousLesMoyensPerso = moyensPerso.length > 0
+    ? moyensPerso.map(m => m.nom)
+    : MOYENS_PERSO_DEFAUT
+
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteMsg, setInviteMsg] = useState('')
 
@@ -188,50 +195,63 @@ export default function CompteJoint({ user }) {
   }
   const fetchContributions = async () => { const { data } = await supabase.from('contributions_joint').select('*').eq('user_id', ownerId).order('date', { ascending: false }); setContributions(data || []) }
 
-  // Calcul solde : basé sur les noms enregistrés dans la config
-  // monNom = nom de l'utilisateur courant (owner ou partner selon email)
-  const calcSolde = (deps, depProj, contribs) => {
+  // Calcul solde complet
+  // Logique : on calcule du point de vue du OWNER
+  // owner a avancé (carte owner) → partner lui doit sa part → solde positif pour owner
+  // partner a avancé (carte partner) → owner lui doit sa part → solde négatif pour owner
+  // carte commune → pas de dette
+  // contribution owner → partner doit (positif)
+  // contribution partner → owner doit (négatif)
+  const calcSolde = (deps, depProj, contribs, mjData) => {
     let s = 0
     const nomOwner = config?.nom_owner || ''
 
-    // Dépenses communes sur moyens PERSO
+    const ownerAPayeAvecCette = (moyen_paiement, payeur) => {
+      // Si carte commune → pas de dette
+      if ((config?.moyens_communs || []).includes(moyen_paiement)) return null
+      // Chercher dans moyens joint
+      const mj = (mjData || []).find(m => m.nom === moyen_paiement)
+      if (mj) return mj.appartient_a === 'owner'
+      // Sinon se fier au champ payeur
+      return payeur === nomOwner
+    }
+
     ;(deps || []).forEach(d => {
-      if (moyensCommuns.includes(d.moyen_paiement)) return
+      const ownerAPaye = ownerAPayeAvecCette(d.moyen_paiement, d.payeur)
+      if (ownerAPaye === null) return // carte commune
       const p = (d.part_moi || 50) / 100
-      const ownerAPaye = d.payeur === nomOwner
-      // Du point de vue owner : ownerAPaye → partner doit sa part (+)
       s += ownerAPaye ? d.montant * (1 - p) : -d.montant * p
     })
 
-    // Dépenses projets sur moyens PERSO
     ;(depProj || []).forEach(d => {
-      if (moyensCommuns.includes(d.moyen_paiement)) return
+      const ownerAPaye = ownerAPayeAvecCette(d.moyen_paiement, d.payeur)
+      if (ownerAPaye === null) return
       const p = (d.part_moi || 50) / 100
-      const ownerAPaye = d.payeur === nomOwner
       s += ownerAPaye ? d.montant * (1 - p) : -d.montant * p
     })
 
-    // Contributions : owner a versé → partner lui doit (+) ; partner a versé → owner lui doit (-)
     ;(contribs || []).forEach(c => {
       s += c.contributeur === nomOwner ? c.montant : -c.montant
     })
 
-    // Inverser si je suis partner (je vois le solde de mon point de vue)
     return isPartner ? -s : s
   }
 
   const fetchSolde = async () => {
-    const [{ data: deps }, { data: depProj }, { data: contribs }] = await Promise.all([
+    const [{ data: deps }, { data: depProj }, { data: contribs }, { data: mj }] = await Promise.all([
       supabase.from('depenses_joint').select('montant,payeur,part_moi,moyen_paiement').eq('user_id', ownerId),
       supabase.from('depenses_projet').select('montant,payeur,part_moi,moyen_paiement').eq('owner_id', ownerId),
       supabase.from('contributions_joint').select('montant,contributeur').eq('user_id', ownerId),
+      supabase.from('moyens_paiement_joint').select('*').eq('owner_id', ownerId),
     ])
-    setSoldeGlobal(calcSolde(deps, depProj, contribs))
+    setSoldeGlobal(calcSolde(deps, depProj, contribs, mj))
   }
 
   const handleSaveDep = async (e) => {
     e.preventDefault()
-    const payload = { libelle: depForm.libelle, montant: parseFloat(depForm.montant), payeur: depForm.payeur, moyen_paiement: depForm.moyen_paiement, part_moi: parseFloat(depForm.part_moi), date: depForm.date, categorie: depForm.categorie, note: depForm.note, sync_depenses_perso: depForm.sync_depenses_perso, user_id: ownerId }
+    // Le payeur est déterminé automatiquement par la carte utilisée
+    const payeurAuto = getPayeurFromMoyen(depForm.moyen_paiement)
+    const payload = { libelle: depForm.libelle, montant: parseFloat(depForm.montant), payeur: payeurAuto === 'commun' ? 'commun' : payeurAuto, moyen_paiement: depForm.moyen_paiement, part_moi: parseFloat(depForm.part_moi), date: depForm.date, categorie: depForm.categorie, note: depForm.note, sync_depenses_perso: depForm.sync_depenses_perso, user_id: ownerId }
     if (editDep) {
       await supabase.from('depenses_joint').update(payload).eq('id', editDep.id)
     } else {
@@ -263,7 +283,8 @@ export default function CompteJoint({ user }) {
 
   const handleSaveDepProjet = async (e) => {
     e.preventDefault()
-    const payload = { libelle: depProjetForm.libelle, montant: parseFloat(depProjetForm.montant), payeur: depProjetForm.payeur, moyen_paiement: depProjetForm.moyen_paiement, part_moi: parseFloat(depProjetForm.part_moi), date: depProjetForm.date, note: depProjetForm.note, projet_id: projetActif.id, owner_id: ownerId }
+    const payeurAuto = getPayeurFromMoyen(depProjetForm.moyen_paiement)
+    const payload = { libelle: depProjetForm.libelle, montant: parseFloat(depProjetForm.montant), payeur: payeurAuto === 'commun' ? 'commun' : payeurAuto, moyen_paiement: depProjetForm.moyen_paiement, part_moi: parseFloat(depProjetForm.part_moi), date: depProjetForm.date, note: depProjetForm.note, projet_id: projetActif.id, owner_id: ownerId }
     if (editDepProjet) {
       await supabase.from('depenses_projet').update(payload).eq('id', editDepProjet.id)
     } else {
@@ -288,45 +309,71 @@ export default function CompteJoint({ user }) {
   const inp = { width: '100%', padding: '8px 12px', borderRadius: 8, fontSize: 14, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }
   const card = { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 16 }
 
-  // Composant sélecteur de payeur avec vrais noms
-  const PayeurBtn = ({ form, setForm }) => (
-    <div>
-      <label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 6 }}>Qui a payé ?</label>
-      <div style={{ display: 'flex', gap: 8 }}>
-        {[[monNom, '👤', '#6366f1'], [nomAutre, '👥', '#ec4899']].map(([nom, icon, color]) => (
-          <button key={nom} type="button" onClick={() => setForm(f => ({ ...f, payeur: nom }))}
-            style={{ flex: 1, padding: '10px', borderRadius: 10, border: form.payeur === nom ? 'none' : '1px solid var(--color-border)', background: form.payeur === nom ? color : 'transparent', color: form.payeur === nom ? 'white' : 'var(--color-text-muted)', cursor: 'pointer', fontWeight: 500, fontSize: 13 }}>
-            {icon} {nom}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
+  // Plus besoin de PayeurBtn — la carte détermine qui a payé
+  // On garde juste un affichage info
+  const PayeurInfo = ({ form }) => {
+    const payeur = getPayeurFromMoyen(form.moyen_paiement)
+    if (payeur === 'commun' || !form.moyen_paiement) return null
+    return null // L'info est déjà dans MoyenSelect
+  }
 
-  // Sélecteur de moyen avec groupes (commun / moi / partenaire)
+  // Détermine qui a payé selon la carte utilisée
+  const getPayeurFromMoyen = (moyenNom) => {
+    if (moyensCommuns.includes(moyenNom)) return 'commun'
+    // Chercher dans les moyens joint configurés
+    const m = moyensJoint.find(mj => mj.nom === moyenNom)
+    if (m) return m.appartient_a === 'owner' ? config?.nom_owner : config?.nom_partner
+    // Sinon c'est un moyen perso de l'utilisateur courant
+    return monNom
+  }
+
+  const isCarteCommune = (nom) => moyensCommuns.includes(nom)
+  const isCarteOwner = (nom) => {
+    const m = moyensJoint.find(mj => mj.nom === nom)
+    return m ? m.appartient_a === 'owner' : true // par défaut owner
+  }
+
+  // Sélecteur de moyen — la carte détermine qui a payé
   const MoyenSelect = ({ form, setForm }) => {
-    const isCommun = moyensCommuns.includes(form.moyen_paiement)
+    const payeur = getPayeurFromMoyen(form.moyen_paiement)
+    const isCommun = payeur === 'commun'
+    const mesMoyensNoms = mesMoyens.length > 0
+      ? mesMoyens.map(m => m.nom)
+      : tousLesMoyensPerso
+    const moyensAutreNoms = moyensAutre.map(m => m.nom)
+
     return (
       <div>
-        <label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Moyen de paiement</label>
-        <select value={form.moyen_paiement} onChange={e => setForm(f => ({ ...f, moyen_paiement: e.target.value }))} style={inp}>
+        <label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Carte utilisée</label>
+        <select value={form.moyen_paiement} onChange={e => {
+          const newMoyen = e.target.value
+          const newPayeur = getPayeurFromMoyen(newMoyen)
+          setForm(f => ({ ...f, moyen_paiement: newMoyen, payeur: newPayeur === 'commun' ? 'commun' : newPayeur }))
+        }} style={inp}>
           {moyensCommuns.length > 0 && (
-            <optgroup label="🤝 Communs (pas de dette)">
+            <optgroup label="🤝 Carte commune (pot commun)">
               {moyensCommuns.map(m => <option key={m}>{m}</option>)}
             </optgroup>
           )}
-          {mesMoyens.filter(m => !moyensCommuns.includes(m.nom)).length > 0 && (
-            <optgroup label={`👤 ${monNom}`}>
-              {mesMoyens.filter(m => !moyensCommuns.includes(m.nom)).map(m => <option key={m.nom}>{m.nom}</option>)}
+          {mesMoyensNoms.filter(n => !moyensCommuns.includes(n)).length > 0 && (
+            <optgroup label={`💳 ${monNom} (tu avances)`}>
+              {mesMoyensNoms.filter(n => !moyensCommuns.includes(n)).map(m => <option key={m}>{m}</option>)}
             </optgroup>
           )}
-          {moyensAutre.filter(m => !moyensCommuns.includes(m.nom)).length > 0 && (
-            <optgroup label={`👥 ${nomAutre}`}>
-              {moyensAutre.filter(m => !moyensCommuns.includes(m.nom)).map(m => <option key={m.nom}>{m.nom}</option>)}
+          {moyensAutreNoms.filter(n => !moyensCommuns.includes(n)).length > 0 && (
+            <optgroup label={`💳 ${nomAutre} (elle/il avance)`}>
+              {moyensAutreNoms.filter(n => !moyensCommuns.includes(n)).map(m => <option key={m}>{m}</option>)}
             </optgroup>
           )}
         </select>
-        {isCommun && <div style={{ marginTop: 6, fontSize: 11, padding: '4px 8px', borderRadius: 6, background: 'rgba(16,185,129,0.1)', color: '#10b981' }}>🤝 Moyen commun — pas de dette générée</div>}
+        <div style={{ marginTop: 6, fontSize: 12, padding: '6px 10px', borderRadius: 8,
+          background: isCommun ? 'rgba(16,185,129,0.1)' : 'rgba(99,102,241,0.08)',
+          color: isCommun ? '#10b981' : 'var(--color-text-muted)',
+          border: `1px solid ${isCommun ? 'rgba(16,185,129,0.3)' : 'var(--color-border)'}` }}>
+          {isCommun
+            ? '🤝 Payé depuis le pot commun — pas de dette'
+            : `👤 ${payeur} avance l'argent — calcul de dette actif`}
+        </div>
       </div>
     )
   }
@@ -783,9 +830,8 @@ export default function CompteJoint({ user }) {
           <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Catégorie</label><select value={depForm.categorie} onChange={e => setDepForm(f => ({...f, categorie: e.target.value}))} style={inp}>{CATS_JOINT.map(c => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}</select></div>
           <MoyenSelect form={depForm} setForm={setDepForm} />
         </div>
-        <PayeurBtn form={depForm} setForm={setDepForm} />
         {!moyensCommuns.includes(depForm.moyen_paiement) && <PartInput value={depForm.part_moi} onChange={v => setDepForm(f => ({...f, part_moi: v}))} montant={depForm.montant} />}
-        {!editDep && !moyensCommuns.includes(depForm.moyen_paiement) && depForm.payeur === monNom && (
+        {!editDep && !moyensCommuns.includes(depForm.moyen_paiement) && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 10, background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)' }}>
             <div><div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text)' }}>Ajouter dans mes dépenses perso</div><div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>Catégorie 🤝 Compte Joint</div></div>
             <button type="button" onClick={() => setDepForm(f => ({...f, sync_depenses_perso: !f.sync_depenses_perso}))} style={{ position: 'relative', width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', background: depForm.sync_depenses_perso ? '#6366f1' : '#475569', flexShrink: 0 }}><span style={{ position: 'absolute', top: 2, width: 20, height: 20, borderRadius: '50%', background: 'white', transition: 'left 0.2s', left: depForm.sync_depenses_perso ? 22 : 2 }} /></button>
@@ -821,9 +867,8 @@ export default function CompteJoint({ user }) {
         </div>
         <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Libellé</label><input required value={depProjetForm.libelle} onChange={e => setDepProjetForm(f => ({...f, libelle: e.target.value}))} placeholder="Loyer, Ikea..." style={inp} /></div>
         <MoyenSelect form={depProjetForm} setForm={setDepProjetForm} />
-        <PayeurBtn form={depProjetForm} setForm={setDepProjetForm} />
         {!moyensCommuns.includes(depProjetForm.moyen_paiement) && <PartInput value={depProjetForm.part_moi} onChange={v => setDepProjetForm(f => ({...f, part_moi: v}))} montant={depProjetForm.montant} />}
-        {!editDepProjet && depProjetForm.payeur === monNom && !moyensCommuns.includes(depProjetForm.moyen_paiement) && (
+        {!editDepProjet && !moyensCommuns.includes(depProjetForm.moyen_paiement) && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 10, background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)' }}>
             <div><div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text)' }}>Ajouter dans mes dépenses perso</div><div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>🤝 {projetActif?.nom}</div></div>
             <button type="button" onClick={() => setDepProjetForm(f => ({...f, sync_depenses_perso: !f.sync_depenses_perso}))} style={{ position: 'relative', width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', background: depProjetForm.sync_depenses_perso ? '#6366f1' : '#475569', flexShrink: 0 }}><span style={{ position: 'absolute', top: 2, width: 20, height: 20, borderRadius: '50%', background: 'white', transition: 'left 0.2s', left: depProjetForm.sync_depenses_perso ? 22 : 2 }} /></button>
