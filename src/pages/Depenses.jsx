@@ -10,6 +10,7 @@ export const CATEGORIES = [
   { id: 'loisirs', label: 'Loisirs / Sorties', icon: '🎉', color: '#f59e0b' },
   { id: 'courses', label: 'Courses', icon: '🛒', color: '#84cc16' },
   { id: 'divers', label: 'Divers', icon: '📦', color: '#94a3b8' },
+  { id: 'joint', label: 'Compte Joint', icon: '🤝', color: '#ec4899' },
 ]
 
 // moyens loaded dynamically

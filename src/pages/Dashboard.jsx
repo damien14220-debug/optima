@@ -25,8 +25,17 @@ export default function Dashboard({ user }) {
     const parCategorie = CATEGORIES.map(cat => ({ ...cat, total: (depenses||[]).filter(d => d.categorie===cat.id).reduce((s,d) => s+d.montant, 0) })).filter(c => c.total > 0)
     const parMois = Array.from({length:12},(_,i) => { const m=i+1; return { mois: MOIS[i], total: Math.round((depensesAnnee||[]).filter(d=>new Date(d.date).getMonth()+1===m).reduce((s,d)=>s+d.montant,0)) }})
     const patrimoineFinancier = (investissements||[]).reduce((s,i) => s+(i.valeur_actuelle||0), 0)
+
+    // Solde compte joint
+    const { data: depJoint } = await supabase.from('depenses_projet').select('montant,payeur,part_moi').eq('owner_id', user.id)
+    let soldeJoint = 0
+    ;(depJoint||[]).forEach(dep => {
+      const partMoi = dep.part_moi / 100
+      if (dep.payeur === 'moi') soldeJoint += dep.montant * (1 - partMoi)
+      else soldeJoint -= dep.montant * partMoi
+    })
     const patrimoineMateriel = (biens||[]).reduce((s,b) => s+(b.valeur_actuelle||0), 0)
-    setStats({ totalDepenses, totalRevenus, balance: totalRevenus-totalDepenses, parCategorie, parMois, patrimoineTotal: patrimoineFinancier+patrimoineMateriel })
+    setStats({ totalDepenses, totalRevenus, balance: totalRevenus-totalDepenses, parCategorie, parMois, patrimoineTotal: patrimoineFinancier+patrimoineMateriel, soldeJoint })
     setLoading(false)
   }
   if (loading) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 240 }}><div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" /></div>
@@ -39,7 +48,8 @@ export default function Dashboard({ user }) {
         <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 2 }}>{moisLabel.charAt(0).toUpperCase()+moisLabel.slice(1)}</p>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10 }}>
-        {[{ label: 'Revenus', value: stats.totalRevenus, color: '#10b981', icon: '💰' },{ label: 'Dépenses', value: stats.totalDepenses, color: '#ef4444', icon: '💸' },{ label: 'Balance', value: stats.balance, color: stats.balance>=0?'#10b981':'#ef4444', icon: stats.balance>=0?'📈':'📉' },{ label: 'Patrimoine', value: stats.patrimoineTotal, color: '#6366f1', icon: '🏦' }].map(k => (
+        {[{ label: 'Revenus', value: stats.totalRevenus, color: '#10b981', icon: '💰' },{ label: 'Dépenses', value: stats.totalDepenses, color: '#ef4444', icon: '💸' },{ label: 'Balance', value: stats.balance, color: stats.balance>=0?'#10b981':'#ef4444', icon: stats.balance>=0?'📈':'📉' },{ label: 'Patrimoine', value: stats.patrimoineTotal, color: '#6366f1', icon: '🏦' },
+        { label: 'Solde joint', value: stats.soldeJoint, color: stats.soldeJoint >= 0 ? '#10b981' : '#ef4444', icon: '🤝' }].map(k => (
           <div key={k.label} style={{ ...cardStyle, padding: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}><span style={{ fontSize: 18 }}>{k.icon}</span><span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{k.label}</span></div>
             <div style={{ fontSize: 20, fontWeight: 700, color: k.color }}>{k.value.toFixed(0)} €</div>
