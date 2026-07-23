@@ -51,6 +51,12 @@ export default function CompteJoint({ user }) {
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth() + 1)
   const [filterYear, setFilterYear] = useState(new Date().getFullYear())
 
+  const [showContribForm, setShowContribForm] = useState(false)
+  const [contributions, setContributions] = useState([])
+  const [editContrib, setEditContrib] = useState(null)
+  const EMPTY_CONTRIB = { contributeur: 'moi', montant: '', date: new Date().toISOString().split('T')[0], note: '' }
+  const [contribForm, setContribForm] = useState({ contributeur: 'moi', montant: '', date: new Date().toISOString().split('T')[0], note: '' })
+
   const [showProjetForm, setShowProjetForm] = useState(false)
   const [showDepCommuneForm, setShowDepCommuneForm] = useState(false)
   const [showDepProjetForm, setShowDepProjetForm] = useState(false)
@@ -72,7 +78,7 @@ export default function CompteJoint({ user }) {
   const allCatsJoint = [...CATS_JOINT_DEFAUT, ...catsJoint.map(c => ({ id: c.id, label: c.nom, icon: c.icone }))]
 
   useEffect(() => { fetchPartage() }, [])
-  useEffect(() => { if (ownerId) { fetchProjets(); fetchAbonnements(); fetchCatsJoint(); fetchSoldeGlobal() } }, [ownerId])
+  useEffect(() => { if (ownerId) { fetchProjets(); fetchAbonnements(); fetchCatsJoint(); fetchSoldeGlobal(); fetchContributions() } }, [ownerId])
   useEffect(() => { if (ownerId) fetchDepensesCommunes() }, [filterMonth, filterYear, ownerId])
   useEffect(() => { if (projetActif) fetchDepensesProjet() }, [projetActif, filterMonth, filterYear])
 
@@ -95,6 +101,11 @@ export default function CompteJoint({ user }) {
   const fetchAbonnements = async () => { const { data } = await supabase.from('abonnements_joint').select('*').eq('user_id', ownerId).order('jour_prelevement'); setAbonnements(data || []) }
   const fetchCatsJoint = async () => { const { data } = await supabase.from('categories_joint').select('*').eq('owner_id', ownerId).order('ordre'); setCatsJoint(data || []) }
 
+  const fetchContributions = async () => {
+    const { data } = await supabase.from('contributions_joint').select('*').eq('user_id', ownerId).order('date', { ascending: false })
+    setContributions(data || [])
+  }
+
   const fetchDepensesCommunes = async () => {
     const start = `${filterYear}-${String(filterMonth).padStart(2,'0')}-01`
     const end = new Date(filterYear, filterMonth, 0).toISOString().split('T')[0]
@@ -113,14 +124,18 @@ export default function CompteJoint({ user }) {
   const fetchSoldeGlobal = async () => {
     const { data } = await supabase.from('depenses_projet').select('montant,payeur,part_moi').eq('owner_id', ownerId)
     let s = 0
+    // Si je suis le owner: payeur='moi' = moi, payeur='partenaire' = Aline
+    // Si je suis partner: payeur='moi' = owner (Damien), payeur='partenaire' = moi (Aline)
+    // On calcule toujours du point de vue du owner, puis on inverse si on est partner
     ;(data || []).forEach(d => { const p = d.part_moi / 100; s += d.payeur === 'moi' ? d.montant * (1 - p) : -d.montant * p })
-    setSoldeGlobal(s)
+    // Si je suis partner, j'inverse (ce que Damien me doit = ce que je dois à Damien vu de son côté)
+    setSoldeGlobal(isPartner ? -s : s)
   }
 
   const soldeProjet = (deps) => {
     let s = 0
     deps.forEach(d => { const p = d.part_moi / 100; s += d.payeur === 'moi' ? d.montant * (1 - p) : -d.montant * p })
-    return s
+    return isPartner ? -s : s
   }
 
   const savePartnerName = async () => {
@@ -169,6 +184,14 @@ export default function CompteJoint({ user }) {
     if (editAbon) await supabase.from('abonnements_joint').update(payload).eq('id', editAbon.id)
     else await supabase.from('abonnements_joint').insert(payload)
     setShowAbonForm(false); setEditAbon(null); setAbonForm(EMPTY_ABON); fetchAbonnements()
+  }
+
+  const handleSaveContrib = async (e) => {
+    e.preventDefault()
+    const payload = { ...contribForm, montant: parseFloat(contribForm.montant), user_id: ownerId }
+    if (editContrib) await supabase.from('contributions_joint').update(payload).eq('id', editContrib.id)
+    else await supabase.from('contributions_joint').insert(payload)
+    setShowContribForm(false); setEditContrib(null); setContribForm({ contributeur: 'moi', montant: '', date: new Date().toISOString().split('T')[0], note: '' }); fetchContributions()
   }
 
   const inp = { width: '100%', padding: '8px 12px', borderRadius: 8, fontSize: 14, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }
@@ -257,7 +280,7 @@ export default function CompteJoint({ user }) {
         <>
           {/* Sous-tabs */}
           <div style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 10, background: 'var(--color-bg)', marginBottom: 14, border: '1px solid var(--color-border)' }}>
-            {[['depenses','💸 Dépenses communes'],['abonnements','🔄 Abonnements']].map(([t,l]) => (
+            {[['depenses','💸 Dépenses communes'],['abonnements','🔄 Abonnements'],['contributions','💳 Contributions']].map(([t,l]) => (
               <button key={t} onClick={() => setCommunTab(t)}
                 style={{ flex: 1, padding: '7px 4px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, background: communTab === t ? 'var(--color-surface)' : 'transparent', color: communTab === t ? 'var(--color-text)' : 'var(--color-text-muted)' }}>
                 {l}
@@ -307,7 +330,60 @@ export default function CompteJoint({ user }) {
             </>
           )}
 
-          {/* ABONNEMENTS */}
+          {/* CONTRIBUTIONS */}
+          {communTab === 'contributions' && (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Qui verse quoi et quand sur le compte joint</p>
+                <button onClick={() => { setShowContribForm(true); setEditContrib(null); setContribForm({ contributeur: 'moi', montant: '', date: new Date().toISOString().split('T')[0], note: '' }) }}
+                  style={{ padding: '8px 14px', borderRadius: 10, border: 'none', cursor: 'pointer', fontWeight: 600, color: 'white', background: 'linear-gradient(135deg,#10b981,#06b6d4)', fontSize: 13 }}>
+                  + Contribution
+                </button>
+              </div>
+              {contributions.length === 0
+                ? <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 16, padding: 40, textAlign: 'center' }}><p style={{ fontSize: 36 }}>💳</p><p style={{ color: 'var(--color-text-muted)', marginTop: 8 }}>Aucune contribution enregistrée</p></div>
+                : (() => {
+                  const totalMoi = contributions.filter(c => c.contributeur === 'moi').reduce((s, c) => s + c.montant, 0)
+                  const totalPart = contributions.filter(c => c.contributeur === 'partenaire').reduce((s, c) => s + c.montant, 0)
+                  return (
+                    <>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+                        {[{ label: 'Toi', value: totalMoi, color: '#6366f1' },{ label: partnerName, value: totalPart, color: '#ec4899' },{ label: 'Total', value: totalMoi + totalPart, color: '#10b981' }].map(k => (
+                          <div key={k.label} style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 12, padding: 12, textAlign: 'center' }}>
+                            <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 4 }}>{k.label}</div>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: k.color }}>+ {k.value.toFixed(0)} €</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {contributions.map(c => {
+                          const isMoi = c.contributeur === 'moi'
+                          const color = isMoi ? '#6366f1' : '#ec4899'
+                          const nom = isMoi ? 'Toi' : partnerName
+                          return (
+                            <div key={c.id} style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                              <div style={{ width: 36, height: 36, borderRadius: 10, background: color + '15', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
+                                {isMoi ? '👤' : '👥'}
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text)' }}>{nom} a versé</div>
+                                <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>{new Date(c.date).toLocaleDateString('fr-FR')}{c.note ? ` · ${c.note}` : ''}</div>
+                              </div>
+                              <span style={{ fontSize: 15, fontWeight: 700, color: '#10b981' }}>+ {c.montant.toFixed(2)} €</span>
+                              <button onClick={() => { setEditContrib(c); setContribForm({ contributeur: c.contributeur, montant: c.montant, date: c.date, note: c.note || '' }); setShowContribForm(true) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15 }}>✏️</button>
+                              <button onClick={async () => { if (!confirm('Supprimer ?')) return; await supabase.from('contributions_joint').delete().eq('id', c.id); fetchContributions() }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15 }}>🗑️</button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </>
+                  )
+                })()
+              }
+            </>
+          )}
+
+        {/* ABONNEMENTS */}
           {communTab === 'abonnements' && (
             <>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -524,6 +600,25 @@ export default function CompteJoint({ user }) {
       )}
 
       {/* Forms */}
+      <FormModal show={showContribForm} onClose={() => { setShowContribForm(false); setEditContrib(null) }} title={editContrib ? 'Modifier' : 'Nouvelle contribution'} onSubmit={handleSaveContrib} color="linear-gradient(135deg,#10b981,#06b6d4)" submitLabel={editContrib ? 'Modifier' : 'Ajouter'}>
+        <div>
+          <label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 6 }}>Qui a versé ?</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[['moi','👤 Moi','#6366f1'],['partenaire',`👥 ${partnerName}`,'#ec4899']].map(([v,l,c]) => (
+              <button key={v} type="button" onClick={() => setContribForm(f => ({...f, contributeur: v}))}
+                style={{ flex: 1, padding: '10px', borderRadius: 10, border: contribForm.contributeur === v ? 'none' : '1px solid var(--color-border)', background: contribForm.contributeur === v ? c : 'transparent', color: contribForm.contributeur === v ? 'white' : 'var(--color-text-muted)', cursor: 'pointer', fontWeight: 500, fontSize: 13 }}>
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Montant (€)</label><input type="number" step="0.01" min="0" required value={contribForm.montant} onChange={e => setContribForm(f => ({...f, montant: e.target.value}))} placeholder="0.00" style={inp} /></div>
+          <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Date</label><input type="date" required value={contribForm.date} onChange={e => setContribForm(f => ({...f, date: e.target.value}))} style={inp} /></div>
+        </div>
+        <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Note</label><input value={contribForm.note} onChange={e => setContribForm(f => ({...f, note: e.target.value}))} placeholder="Ex: Virement du 1er, Espèces..." style={inp} /></div>
+      </FormModal>
+
       <FormModal show={showProjetForm} onClose={() => { setShowProjetForm(false); setEditProjet(null) }} title={editProjet ? 'Modifier le projet' : 'Nouveau projet'} onSubmit={handleSaveProjet} color="linear-gradient(135deg,#6366f1,#8b5cf6)" submitLabel={editProjet ? 'Modifier' : 'Créer'}>
         <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Nom</label><input required value={projetForm.nom} onChange={e => setProjetForm(f => ({...f, nom: e.target.value}))} placeholder="Ex: Appart, Vacances..." style={inp} /></div>
         <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Description</label><input value={projetForm.description} onChange={e => setProjetForm(f => ({...f, description: e.target.value}))} placeholder="Optionnel..." style={inp} /></div>
