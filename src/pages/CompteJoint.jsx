@@ -88,10 +88,10 @@ export default function CompteJoint({ user }) {
   const emptyDepProjet = () => ({ libelle: '', montant: '', payeur: monNom, moyen_paiement: mesMoyens[0]?.nom || tousLesMoyens[0]?.nom || '', part_moi: 50, date: new Date().toISOString().split('T')[0], note: '', sync_depenses_perso: false })
   const emptyContrib = () => ({ contributeur: monNom, montant: '', date: new Date().toISOString().split('T')[0], note: '' })
 
-  const [depForm, setDepForm] = useState({ libelle: '', montant: '', payeur: '', moyen_paiement: '', part_moi: 50, date: new Date().toISOString().split('T')[0], categorie: 'divers', note: '', sync_depenses_perso: false })
+  const [depForm, setDepForm] = useState({ libelle: '', montant: '', payeur: '', moyen_paiement: '', part_moi: 50, date: new Date().toISOString().split('T')[0], categorie: 'divers', note: '', sync_depenses_perso: false, est_joint: false })
   const [abonForm, setAbonForm] = useState({ nom: '', montant: '', jour_prelevement: 1, moyen_paiement: '', part_damien: 50, actif: true, note: '' })
   const [projetForm, setProjetForm] = useState(emptyProjet)
-  const [depProjetForm, setDepProjetForm] = useState({ libelle: '', montant: '', payeur: '', moyen_paiement: '', part_moi: 50, date: new Date().toISOString().split('T')[0], note: '', sync_depenses_perso: false })
+  const [depProjetForm, setDepProjetForm] = useState({ libelle: '', montant: '', payeur: '', moyen_paiement: '', part_moi: 50, date: new Date().toISOString().split('T')[0], note: '', sync_depenses_perso: false, est_joint: false })
   const [contribForm, setContribForm] = useState({ contributeur: '', montant: '', date: new Date().toISOString().split('T')[0], note: '' })
 
   // Config form
@@ -202,31 +202,21 @@ export default function CompteJoint({ user }) {
   // carte commune → pas de dette
   // contribution owner → partner doit (positif)
   // contribution partner → owner doit (négatif)
-  const calcSolde = (deps, depProj, contribs, mjData) => {
+  const calcSolde = (deps, depProj, contribs) => {
     let s = 0
     const nomOwner = config?.nom_owner || ''
 
-    const ownerAPayeAvecCette = (moyen_paiement, payeur) => {
-      // Si carte commune → pas de dette
-      if ((config?.moyens_communs || []).includes(moyen_paiement)) return null
-      // Chercher dans moyens joint
-      const mj = (mjData || []).find(m => m.nom === moyen_paiement)
-      if (mj) return mj.appartient_a === 'owner'
-      // Sinon se fier au champ payeur
-      return payeur === nomOwner
-    }
-
     ;(deps || []).forEach(d => {
-      const ownerAPaye = ownerAPayeAvecCette(d.moyen_paiement, d.payeur)
-      if (ownerAPaye === null) return // carte commune
+      if (d.est_joint) return // payé depuis compte joint → pas de dette
       const p = (d.part_moi || 50) / 100
+      const ownerAPaye = d.payeur === nomOwner
       s += ownerAPaye ? d.montant * (1 - p) : -d.montant * p
     })
 
     ;(depProj || []).forEach(d => {
-      const ownerAPaye = ownerAPayeAvecCette(d.moyen_paiement, d.payeur)
-      if (ownerAPaye === null) return
+      if (d.est_joint) return
       const p = (d.part_moi || 50) / 100
+      const ownerAPaye = d.payeur === nomOwner
       s += ownerAPaye ? d.montant * (1 - p) : -d.montant * p
     })
 
@@ -238,27 +228,24 @@ export default function CompteJoint({ user }) {
   }
 
   const fetchSolde = async () => {
-    const [{ data: deps }, { data: depProj }, { data: contribs }, { data: mj }] = await Promise.all([
-      supabase.from('depenses_joint').select('montant,payeur,part_moi,moyen_paiement').eq('user_id', ownerId),
-      supabase.from('depenses_projet').select('montant,payeur,part_moi,moyen_paiement').eq('owner_id', ownerId),
+    const [{ data: deps }, { data: depProj }, { data: contribs }] = await Promise.all([
+      supabase.from('depenses_joint').select('montant,payeur,part_moi,est_joint').eq('user_id', ownerId),
+      supabase.from('depenses_projet').select('montant,payeur,part_moi,est_joint').eq('owner_id', ownerId),
       supabase.from('contributions_joint').select('montant,contributeur').eq('user_id', ownerId),
-      supabase.from('moyens_paiement_joint').select('*').eq('owner_id', ownerId),
     ])
-    setSoldeGlobal(calcSolde(deps, depProj, contribs, mj))
+    setSoldeGlobal(calcSolde(deps, depProj, contribs))
   }
 
   const handleSaveDep = async (e) => {
     e.preventDefault()
-    // Le payeur est déterminé automatiquement par la carte utilisée
-    const payeurAuto = getPayeurFromMoyen(depForm.moyen_paiement)
-    const payload = { libelle: depForm.libelle, montant: parseFloat(depForm.montant), payeur: payeurAuto === 'commun' ? 'commun' : payeurAuto, moyen_paiement: depForm.moyen_paiement, part_moi: parseFloat(depForm.part_moi), date: depForm.date, categorie: depForm.categorie, note: depForm.note, sync_depenses_perso: depForm.sync_depenses_perso, user_id: ownerId }
+    const payload = { libelle: depForm.libelle, montant: parseFloat(depForm.montant), payeur: depForm.payeur, moyen_paiement: depForm.moyen_paiement, part_moi: parseFloat(depForm.part_moi), date: depForm.date, categorie: depForm.categorie, note: depForm.note, sync_depenses_perso: depForm.sync_depenses_perso, est_joint: depForm.est_joint, user_id: ownerId }
     if (editDep) {
       await supabase.from('depenses_joint').update(payload).eq('id', editDep.id)
     } else {
       const { error } = await supabase.from('depenses_joint').insert(payload)
       if (error) { alert('Erreur : ' + error.message); return }
-      const jaiPaye = depForm.payeur === monNom
-      if (jaiPaye && depForm.sync_depenses_perso && !moyensCommuns.includes(depForm.moyen_paiement)) {
+      const jaiPaye = depForm.payeur === (isPartner ? config?.nom_partner : config?.nom_owner)
+      if (jaiPaye && depForm.sync_depenses_perso && !depForm.est_joint) {
         await supabase.from('depenses').insert({ user_id: user.id, date: depForm.date, montant: parseFloat(depForm.montant), libelle: `🤝 ${depForm.libelle}`, categorie: 'joint', moyen_paiement: depForm.moyen_paiement, is_joint: true })
       }
     }
@@ -283,15 +270,14 @@ export default function CompteJoint({ user }) {
 
   const handleSaveDepProjet = async (e) => {
     e.preventDefault()
-    const payeurAuto = getPayeurFromMoyen(depProjetForm.moyen_paiement)
-    const payload = { libelle: depProjetForm.libelle, montant: parseFloat(depProjetForm.montant), payeur: payeurAuto === 'commun' ? 'commun' : payeurAuto, moyen_paiement: depProjetForm.moyen_paiement, part_moi: parseFloat(depProjetForm.part_moi), date: depProjetForm.date, note: depProjetForm.note, projet_id: projetActif.id, owner_id: ownerId }
+    const payload = { libelle: depProjetForm.libelle, montant: parseFloat(depProjetForm.montant), payeur: depProjetForm.payeur, moyen_paiement: depProjetForm.moyen_paiement, part_moi: parseFloat(depProjetForm.part_moi), date: depProjetForm.date, note: depProjetForm.note, est_joint: depProjetForm.est_joint, projet_id: projetActif.id, owner_id: ownerId }
     if (editDepProjet) {
       await supabase.from('depenses_projet').update(payload).eq('id', editDepProjet.id)
     } else {
       const { error } = await supabase.from('depenses_projet').insert(payload)
       if (error) { alert('Erreur : ' + error.message); return }
-      const jaiPaye = depProjetForm.payeur === monNom
-      if (jaiPaye && depProjetForm.sync_depenses_perso) {
+      const jaiPaye = depProjetForm.payeur === (isPartner ? config?.nom_partner : config?.nom_owner)
+      if (jaiPaye && depProjetForm.sync_depenses_perso && !depProjetForm.est_joint) {
         await supabase.from('depenses').insert({ user_id: user.id, date: depProjetForm.date, montant: parseFloat(depProjetForm.montant), libelle: `🤝 ${projetActif.nom} — ${depProjetForm.libelle}`, categorie: 'joint', moyen_paiement: depProjetForm.moyen_paiement, is_joint: true })
       }
     }
@@ -317,68 +303,43 @@ export default function CompteJoint({ user }) {
     return null // L'info est déjà dans MoyenSelect
   }
 
-  // Détermine qui a payé selon la carte utilisée
-  const getPayeurFromMoyen = (moyenNom) => {
-    if (moyensCommuns.includes(moyenNom)) return 'commun'
-    // Chercher dans les moyens joint configurés
-    const m = moyensJoint.find(mj => mj.nom === moyenNom)
-    if (m) return m.appartient_a === 'owner' ? config?.nom_owner : config?.nom_partner
-    // Sinon c'est un moyen perso de l'utilisateur courant
-    return monNom
-  }
-
-  const isCarteCommune = (nom) => moyensCommuns.includes(nom)
-  const isCarteOwner = (nom) => {
-    const m = moyensJoint.find(mj => mj.nom === nom)
-    return m ? m.appartient_a === 'owner' : true // par défaut owner
-  }
-
-  // Sélecteur de moyen — la carte détermine qui a payé
-  const MoyenSelect = ({ form, setForm }) => {
-    const payeur = getPayeurFromMoyen(form.moyen_paiement)
-    const isCommun = payeur === 'commun'
-    const mesMoyensNoms = mesMoyens.length > 0
-      ? mesMoyens.map(m => m.nom)
-      : tousLesMoyensPerso
-    const moyensAutreNoms = moyensAutre.map(m => m.nom)
-
-    return (
-      <div>
-        <label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Carte utilisée</label>
-        <select value={form.moyen_paiement} onChange={e => {
-          const newMoyen = e.target.value
-          const newPayeur = getPayeurFromMoyen(newMoyen)
-          setForm(f => ({ ...f, moyen_paiement: newMoyen, payeur: newPayeur === 'commun' ? 'commun' : newPayeur }))
-        }} style={inp}>
-          {moyensCommuns.length > 0 && (
-            <optgroup label="🤝 Carte commune (pot commun)">
-              {moyensCommuns.map(m => <option key={m}>{m}</option>)}
-            </optgroup>
-          )}
-          {mesMoyensNoms.filter(n => !moyensCommuns.includes(n)).length > 0 && (
-            <optgroup label={`💳 ${monNom} (tu avances)`}>
-              {mesMoyensNoms.filter(n => !moyensCommuns.includes(n)).map(m => <option key={m}>{m}</option>)}
-            </optgroup>
-          )}
-          {moyensAutreNoms.filter(n => !moyensCommuns.includes(n)).length > 0 && (
-            <optgroup label={`💳 ${nomAutre} (elle/il avance)`}>
-              {moyensAutreNoms.filter(n => !moyensCommuns.includes(n)).map(m => <option key={m}>{m}</option>)}
-            </optgroup>
-          )}
-        </select>
-        <div style={{ marginTop: 6, fontSize: 12, padding: '6px 10px', borderRadius: 8,
-          background: isCommun ? 'rgba(16,185,129,0.1)' : 'rgba(99,102,241,0.08)',
-          color: isCommun ? '#10b981' : 'var(--color-text-muted)',
-          border: `1px solid ${isCommun ? 'rgba(16,185,129,0.3)' : 'var(--color-border)'}` }}>
-          {isCommun
-            ? '🤝 Payé depuis le pot commun — pas de dette'
-            : `👤 ${payeur} avance l'argent — calcul de dette actif`}
-        </div>
+  // ── Composants simples ──
+  const PayeurBtn = ({ form, setForm }) => (
+    <div>
+      <label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 6 }}>Qui a payé ?</label>
+      <div style={{ display: 'flex', gap: 8 }}>
+        {[[config?.nom_owner || 'Damien', '👤', '#6366f1'], [config?.nom_partner || 'Aline', '👥', '#ec4899']].map(([nom, icon, color]) => (
+          <button key={nom} type="button" onClick={() => setForm(f => ({ ...f, payeur: nom }))}
+            style={{ flex: 1, padding: '10px', borderRadius: 10, border: form.payeur === nom ? 'none' : '1px solid var(--color-border)', background: form.payeur === nom ? color : 'transparent', color: form.payeur === nom ? 'white' : 'var(--color-text-muted)', cursor: 'pointer', fontWeight: 600, fontSize: 14 }}>
+            {icon} {nom}
+          </button>
+        ))}
       </div>
-    )
-  }
+    </div>
+  )
 
-  // Invitation en attente
+  const MoyenSimple = ({ form, setForm }) => (
+    <div>
+      <label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Moyen de paiement</label>
+      <select value={form.moyen_paiement} onChange={e => setForm(f => ({ ...f, moyen_paiement: e.target.value }))} style={inp}>
+        {tousLesMoyensPerso.map(m => <option key={m}>{m}</option>)}
+      </select>
+    </div>
+  )
+
+  const CompteJointToggle = ({ form, setForm }) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: `2px solid ${form.est_joint ? '#10b981' : 'var(--color-border)'}`, background: form.est_joint ? 'rgba(16,185,129,0.08)' : 'transparent', cursor: 'pointer' }} onClick={() => setForm(f => ({ ...f, est_joint: !f.est_joint }))}>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: form.est_joint ? '#10b981' : 'var(--color-text)' }}>🤝 Payé depuis le compte joint</div>
+        <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>{form.est_joint ? 'Pas de dette — pot commun utilisé' : 'Carte perso utilisée — dette calculée'}</div>
+      </div>
+      <div style={{ position: 'relative', width: 44, height: 24, borderRadius: 12, background: form.est_joint ? '#10b981' : '#475569', flexShrink: 0 }}>
+        <span style={{ position: 'absolute', top: 2, width: 20, height: 20, borderRadius: '50%', background: 'white', transition: 'left 0.2s', left: form.est_joint ? 22 : 2 }} />
+      </div>
+    </div>
+  )
+
+    // Invitation en attente
   if (invitationRecue && invitationRecue.statut === 'en_attente') {
     return (
       <div style={{ padding: 16, maxWidth: 480, margin: '60px auto', textAlign: 'center' }}>
@@ -461,7 +422,7 @@ export default function CompteJoint({ user }) {
                 : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {depenses.map(dep => {
                     const cat = CATS_JOINT.find(c => c.id === dep.categorie)
-                    const isCommun = moyensCommuns.includes(dep.moyen_paiement)
+                    const isCommun = dep.est_joint
                     const maPart = dep.montant * (dep.part_moi || 50) / 100
                     return (
                       <div key={dep.id} style={{ ...card, padding: '12px 16px' }}>
@@ -638,7 +599,7 @@ export default function CompteJoint({ user }) {
             const nomOwner = config?.nom_owner || ''
             let s = 0
             depensesProjet.forEach(d => {
-              if (moyensCommuns.includes(d.moyen_paiement)) return
+              if (d.est_joint) return
               const p = (d.part_moi || 50) / 100
               s += d.payeur === nomOwner ? d.montant * (1 - p) : -d.montant * p
             })
@@ -670,7 +631,7 @@ export default function CompteJoint({ user }) {
             ? <div style={{ ...card, padding: 40, textAlign: 'center' }}><p style={{ fontSize: 32 }}>💸</p><p style={{ color: 'var(--color-text-muted)', marginTop: 8 }}>Aucune dépense ce mois</p></div>
             : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {depensesProjet.map(dep => {
-                const isCommun = moyensCommuns.includes(dep.moyen_paiement)
+                const isCommun = dep.est_joint
                 const jaiPaye = dep.payeur === monNom
                 const maPart = dep.montant * (dep.part_moi || 50) / 100
                 const partAutre = dep.montant - maPart
@@ -866,9 +827,11 @@ export default function CompteJoint({ user }) {
           <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Montant (€)</label><input type="number" step="0.01" min="0" required value={depProjetForm.montant} onChange={e => setDepProjetForm(f => ({...f, montant: e.target.value}))} placeholder="0.00" style={inp} /></div>
         </div>
         <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Libellé</label><input required value={depProjetForm.libelle} onChange={e => setDepProjetForm(f => ({...f, libelle: e.target.value}))} placeholder="Loyer, Ikea..." style={inp} /></div>
-        <MoyenSelect form={depProjetForm} setForm={setDepProjetForm} />
-        {!moyensCommuns.includes(depProjetForm.moyen_paiement) && <PartInput value={depProjetForm.part_moi} onChange={v => setDepProjetForm(f => ({...f, part_moi: v}))} montant={depProjetForm.montant} />}
-        {!editDepProjet && !moyensCommuns.includes(depProjetForm.moyen_paiement) && (
+        <MoyenSimple form={depProjetForm} setForm={setDepProjetForm} />
+        <CompteJointToggle form={depProjetForm} setForm={setDepProjetForm} />
+        <PayeurBtn form={depProjetForm} setForm={setDepProjetForm} />
+        {!depProjetForm.est_joint && <PartInput value={depProjetForm.part_moi} onChange={v => setDepProjetForm(f => ({...f, part_moi: v}))} montant={depProjetForm.montant} />}
+        {!editDepProjet && !depProjetForm.est_joint && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 10, background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)' }}>
             <div><div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text)' }}>Ajouter dans mes dépenses perso</div><div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>🤝 {projetActif?.nom}</div></div>
             <button type="button" onClick={() => setDepProjetForm(f => ({...f, sync_depenses_perso: !f.sync_depenses_perso}))} style={{ position: 'relative', width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', background: depProjetForm.sync_depenses_perso ? '#6366f1' : '#475569', flexShrink: 0 }}><span style={{ position: 'absolute', top: 2, width: 20, height: 20, borderRadius: '50%', background: 'white', transition: 'left 0.2s', left: depProjetForm.sync_depenses_perso ? 22 : 2 }} /></button>
