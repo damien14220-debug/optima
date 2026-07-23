@@ -253,6 +253,9 @@ export default function Parametres({ user, darkMode, setDarkMode }) {
           </div>
 
           {/* Perso */}
+          <div style={{ fontSize: 12, color: 'var(--color-text-muted)', padding: '8px 12px', borderRadius: 8, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', marginBottom: 4 }}>
+            🤝 Marque un moyen comme <strong style={{ color: '#10b981' }}>Commun</strong> pour indiquer qu'il est partagé (ex: Carte Revolut Join). Les dépenses communes payées avec ce moyen ne génèrent pas de dette entre vous.
+          </div>
           {moyens.length > 0 && (
             <div style={cardStyle}>
               <h3 style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: 10, letterSpacing: 1 }}>MES MOYENS</h3>
@@ -263,7 +266,13 @@ export default function Parametres({ user, darkMode, setDarkMode }) {
                     <div style={{ fontSize: 14, color: 'var(--color-text)', fontWeight: 500 }}>{m.nom}</div>
                     <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{TYPES_PAY.find(t => t.id === m.type)?.label}</div>
                   </div>
-                  <button onClick={() => handleToggleMoyen(m)} style={{ position: 'relative', width: 36, height: 20, borderRadius: 10, border: 'none', cursor: 'pointer', background: m.actif ? '#10b981' : '#475569', flexShrink: 0 }}><span style={{ position: 'absolute', top: 2, width: 16, height: 16, borderRadius: '50%', background: 'white', transition: 'left 0.2s', left: m.actif ? 18 : 2 }} /></button>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                    <button onClick={() => handleToggleMoyen(m)} style={{ position: 'relative', width: 36, height: 20, borderRadius: 10, border: 'none', cursor: 'pointer', background: m.actif ? '#10b981' : '#475569', flexShrink: 0 }}><span style={{ position: 'absolute', top: 2, width: 16, height: 16, borderRadius: '50%', background: 'white', transition: 'left 0.2s', left: m.actif ? 18 : 2 }} /></button>
+                    <button onClick={async () => { await supabase.from('moyens_paiement').update({ est_commun: !m.est_commun }).eq('id', m.id); fetchMoyens() }}
+                      style={{ fontSize: 9, padding: '1px 4px', borderRadius: 6, border: 'none', cursor: 'pointer', background: m.est_commun ? 'rgba(16,185,129,0.15)' : 'var(--color-bg)', color: m.est_commun ? '#10b981' : 'var(--color-text-muted)', fontWeight: 600 }}>
+                      {m.est_commun ? '🤝 Commun' : 'Perso'}
+                    </button>
+                  </div>
                   <button onClick={() => { setEditMoyen(m); setMoyenForm({ nom: m.nom, type: m.type, icone: m.icone, couleur: m.couleur, actif: m.actif }); setShowMoyenForm(true) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15 }}>✏️</button>
                   <button onClick={() => handleDeleteMoyen(m.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15 }}>🗑️</button>
                 </div>

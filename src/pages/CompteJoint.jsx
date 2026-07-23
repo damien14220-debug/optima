@@ -45,6 +45,9 @@ export default function CompteJoint({ user }) {
   const [isPartner, setIsPartner] = useState(false)
   const [partnerName, setPartnerName] = useState('Partenaire')
   const [editPartnerName, setEditPartnerName] = useState(false)
+  const [editOwnerName, setEditOwnerName] = useState(false)
+  const [newOwnerName, setNewOwnerName] = useState('')
+  const [ownerName, setOwnerName] = useState('Moi')
   const [newPartnerName, setNewPartnerName] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteMsg, setInviteMsg] = useState('')
@@ -73,6 +76,18 @@ export default function CompteJoint({ user }) {
   const [soldeGlobal, setSoldeGlobal] = useState(0)
 
   const { moyens: moyensDB } = useMoyensPaiement(user.id)
+  const [moyensCommuns, setMoyensCommuns] = useState([])
+
+  useEffect(() => { fetchMoyensCommuns() }, [])
+
+  const fetchMoyensCommuns = async () => {
+    // Cherche dans les moyens du owner (si partner) ou les miens
+    const uid = ownerId || user.id
+    const { data } = await supabase.from('moyens_paiement').select('nom').eq('user_id', uid).eq('est_commun', true).eq('actif', true)
+    const defauts = ['Compte joint', 'Carte Revolut Join']
+    const custom = (data || []).map(m => m.nom)
+    setMoyensCommuns([...defauts, ...custom.filter(n => !defauts.includes(n))])
+  }
   const MOYENS_DEFAUT = ['Carte SG', 'Carte Trade', 'Espèces', 'Virement']
   const TOUS_MOYENS = [...MOYENS_DEFAUT, ...moyensDB.filter(m => !MOYENS_DEFAUT.includes(m.nom)).map(m => m.nom)]
   const allCatsJoint = [...CATS_JOINT_DEFAUT, ...catsJoint.map(c => ({ id: c.id, label: c.nom, icon: c.icone }))]
@@ -93,7 +108,12 @@ export default function CompteJoint({ user }) {
     const { data: received } = await supabase.from('partages_joint').select('*').eq('partner_id', user.id).single()
     if (received) {
       setInvitationRecue(received)
-      if (received.statut === 'accepte') { setIsPartner(true); setOwnerId(received.owner_id) }
+      if (received.statut === 'accepte') {
+        setIsPartner(true)
+        setOwnerId(received.owner_id)
+        if (received.owner_name) setOwnerName(received.owner_name)
+        else setOwnerName(received.partner_email?.split('@')[0] || 'Partenaire')
+      }
     }
   }
 
@@ -122,19 +142,43 @@ export default function CompteJoint({ user }) {
   }
 
   const fetchSoldeGlobal = async () => {
-    const { data } = await supabase.from('depenses_projet').select('montant,payeur,part_moi').eq('owner_id', ownerId)
+    const [{ data: deps }, { data: depComm }, { data: contribs }] = await Promise.all([
+      supabase.from('depenses_projet').select('montant,payeur,part_moi').eq('owner_id', ownerId),
+      supabase.from('depenses_joint').select('montant,payeur,part_damien,moyen_paiement').eq('user_id', ownerId),
+      supabase.from('contributions_joint').select('montant,contributeur').eq('user_id', ownerId),
+    ])
+
     let s = 0
-    // Si je suis le owner: payeur='moi' = moi, payeur='partenaire' = Aline
-    // Si je suis partner: payeur='moi' = owner (Damien), payeur='partenaire' = moi (Aline)
-    // On calcule toujours du point de vue du owner, puis on inverse si on est partner
-    ;(data || []).forEach(d => { const p = d.part_moi / 100; s += d.payeur === 'moi' ? d.montant * (1 - p) : -d.montant * p })
-    // Si je suis partner, j'inverse (ce que Damien me doit = ce que je dois à Damien vu de son côté)
+
+    // Dépenses projets sur moyens PERSO uniquement
+    ;(deps || []).forEach(d => {
+      const p = d.part_moi / 100
+      s += d.payeur === 'moi' ? d.montant * (1 - p) : -d.montant * p
+    })
+
+    // Dépenses communes sur moyens PERSO uniquement (pas les moyens communs)
+    ;(depComm || []).forEach(d => {
+      if (moyensCommuns.includes(d.moyen_paiement)) return // moyen commun → pas de dette
+      const p = (d.part_damien || 50) / 100
+      s += d.payeur === 'moi' ? d.montant * (1 - p) : -d.montant * p
+    })
+
+    // Contributions : si moi → j'ai versé → partner me doit (+ pour moi)
+    // si partner → partner a versé → je lui dois (- pour moi)
+    ;(contribs || []).forEach(c => {
+      s += c.contributeur === 'moi' ? c.montant : -c.montant
+    })
+
     setSoldeGlobal(isPartner ? -s : s)
   }
 
   const soldeProjet = (deps) => {
     let s = 0
-    deps.forEach(d => { const p = d.part_moi / 100; s += d.payeur === 'moi' ? d.montant * (1 - p) : -d.montant * p })
+    deps.forEach(d => {
+      if (moyensCommuns.includes(d.moyen_paiement)) return
+      const p = d.part_moi / 100
+      s += d.payeur === 'moi' ? d.montant * (1 - p) : -d.montant * p
+    })
     return isPartner ? -s : s
   }
 
@@ -142,6 +186,14 @@ export default function CompteJoint({ user }) {
     if (!newPartnerName.trim()) return
     await supabase.from('partages_joint').update({ partner_name: newPartnerName }).eq('id', partage.id)
     setPartnerName(newPartnerName); setEditPartnerName(false); setNewPartnerName('')
+  }
+
+  const saveOwnerName = async () => {
+    if (!newOwnerName.trim()) return
+    // Le partner met à jour owner_name sur le partage
+    const { data: inv } = await supabase.from('partages_joint').select('id').eq('partner_id', user.id).single()
+    if (inv) await supabase.from('partages_joint').update({ owner_name: newOwnerName }).eq('id', inv.id)
+    setOwnerName(newOwnerName); setEditOwnerName(false); setNewOwnerName('')
   }
 
   const handleSaveProjet = async (e) => {
@@ -316,8 +368,16 @@ export default function CompteJoint({ user }) {
                         <span style={{ fontSize: 22 }}>{cat?.icon || '📦'}</span>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dep.libelle}</div>
-                          <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>{new Date(dep.date).toLocaleDateString('fr-FR')} · {cat?.label} · {dep.moyen_paiement}</div>
-                          <div style={{ fontSize: 11, marginTop: 2 }}><span style={{ color: '#8b5cf6', fontWeight: 500 }}>Ma part : {maPart.toFixed(2)} €</span></div>
+                          <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
+                            {new Date(dep.date).toLocaleDateString('fr-FR')} · {cat?.label} · {dep.moyen_paiement}
+                            {moyensCommuns.includes(dep.moyen_paiement) && <span style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 10, background: 'rgba(16,185,129,0.15)', color: '#10b981', fontSize: 10, fontWeight: 600 }}>🤝 Commun</span>}
+                          </div>
+                          <div style={{ fontSize: 11, marginTop: 2 }}>
+                            {moyensCommuns.includes(dep.moyen_paiement)
+                              ? <span style={{ color: '#10b981', fontWeight: 500 }}>Payé depuis le pot commun</span>
+                              : <span style={{ color: '#8b5cf6', fontWeight: 500 }}>Ma part : {maPart.toFixed(2)} €</span>
+                            }
+                          </div>
                         </div>
                         <span style={{ fontSize: 14, fontWeight: 700, color: '#ec4899', flexShrink: 0 }}>— {dep.montant.toFixed(2)} €</span>
                         <button onClick={() => { setEditDepCommune(dep); setDepCommuneForm({ libelle: dep.libelle, montant: dep.montant, payeur: dep.payeur || 'moi', moyen_paiement: dep.moyen_paiement, part_moi: dep.part_damien || 50, date: dep.date, categorie: dep.categorie || 'divers', note: dep.note || '', sync_depenses_perso: false }); setShowDepCommuneForm(true) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16 }}>✏️</button>
@@ -527,8 +587,16 @@ export default function CompteJoint({ user }) {
                         <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dep.libelle}</div>
                         <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>{new Date(dep.date).toLocaleDateString('fr-FR')} · {dep.moyen_paiement}</div>
                         <div style={{ fontSize: 11, marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          <span style={{ padding: '2px 8px', borderRadius: 20, background: payeurColor + '15', color: payeurColor, fontWeight: 500 }}>{dep.payeur === 'moi' ? 'Toi' : partnerName} a payé {dep.montant.toFixed(2)} €</span>
-                          <span style={{ color: 'var(--color-text-muted)' }}>Ta part : {maPart.toFixed(2)} € · {partnerName} : {partPart.toFixed(2)} €</span>
+                          <span style={{ padding: '2px 8px', borderRadius: 20, background: payeurColor + '15', color: payeurColor, fontWeight: 500 }}>
+                            {dep.payeur === 'moi' ? (isPartner ? ownerName : 'Toi') : (isPartner ? 'Toi' : partnerName)} a payé {dep.montant.toFixed(2)} €
+                            {moyensCommuns.includes(dep.moyen_paiement) && <span style={{ marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 10, background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>🤝 Commun</span>}
+                          </span>
+                          <span style={{ color: 'var(--color-text-muted)' }}>
+                            {moyensCommuns.includes(dep.moyen_paiement)
+                              ? 'Payé depuis le pot commun — pas de dette'
+                              : `Ta part : ${maPart.toFixed(2)} € · ${isPartner ? ownerName : partnerName} : ${partPart.toFixed(2)} €`
+                            }
+                          </span>
                         </div>
                         {dep.note && <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4, fontStyle: 'italic' }}>{dep.note}</div>}
                       </div>
@@ -549,7 +617,29 @@ export default function CompteJoint({ user }) {
       {mainTab === 'partage' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {isPartner ? (
-            <div style={{ ...card, padding: 20, textAlign: 'center' }}><p style={{ fontSize: 32, marginBottom: 8 }}>✅</p><p style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text)' }}>Compte joint actif</p></div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ ...card, padding: 20, textAlign: 'center' }}><p style={{ fontSize: 32, marginBottom: 8 }}>✅</p><p style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text)' }}>Compte joint actif</p></div>
+              <div style={{ ...card, padding: 20 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text)', marginBottom: 12 }}>Renommer ton partenaire</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 16 }}>{ownerName[0]?.toUpperCase()}</div>
+                  <div style={{ flex: 1 }}>
+                    {editOwnerName ? (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input value={newOwnerName} onChange={e => setNewOwnerName(e.target.value)} placeholder="Prénom de Damien" style={{ ...inp, flex: 1 }} autoFocus />
+                        <button onClick={saveOwnerName} style={{ padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', background: '#10b981', color: 'white', fontWeight: 600 }}>✓</button>
+                        <button onClick={() => setEditOwnerName(false)} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--color-border)', cursor: 'pointer', background: 'transparent', color: 'var(--color-text-muted)' }}>✕</button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text)' }}>{ownerName}</span>
+                        <button onClick={() => { setEditOwnerName(true); setNewOwnerName(ownerName) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}>✏️</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           ) : partage ? (
             <>
               <div style={{ ...card, padding: 20 }}>
