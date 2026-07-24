@@ -13,29 +13,51 @@ export default function Dashboard({ user }) {
   const fetchStats = async () => {
     const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2,'0')}-01`
     const endOfMonth = new Date(currentYear, currentMonth, 0).toISOString().split('T')[0]
-    const [{ data: depenses }, { data: revenus }, { data: investissements }, { data: biens }, { data: depensesAnnee }] = await Promise.all([
+    const [{ data: depenses }, { data: revenus }, { data: investissements }, { data: biens }, { data: depensesAnnee }, { data: abonnements }] = await Promise.all([
       supabase.from('depenses').select('*').eq('user_id', user.id).gte('date', startOfMonth).lte('date', endOfMonth),
       supabase.from('revenus').select('*').eq('user_id', user.id).gte('date', startOfMonth).lte('date', endOfMonth),
-      supabase.from('investissements').select('*').eq('user_id', user.id),
+      supabase.from('investissements').select('vehicule_id,valeur_actuelle').eq('user_id', user.id),
       supabase.from('patrimoine_materiel').select('valeur_actuelle').eq('user_id', user.id),
       supabase.from('depenses').select('*').eq('user_id', user.id).gte('date', `${currentYear}-01-01`),
+      supabase.from('abonnements').select('montant,actif').eq('user_id', user.id),
     ])
-    const totalDepenses = (depenses||[]).reduce((s,d) => s+d.montant, 0)
+    const totalDepenses = (depenses||[]).filter(d => !d.libelle?.startsWith('🔄')).reduce((s,d) => s+d.montant, 0)
     const totalRevenus = (revenus||[]).reduce((s,r) => s+r.montant, 0)
     const parCategorie = CATEGORIES.map(cat => ({ ...cat, total: (depenses||[]).filter(d => d.categorie===cat.id).reduce((s,d) => s+d.montant, 0) })).filter(c => c.total > 0)
     const parMois = Array.from({length:12},(_,i) => { const m=i+1; return { mois: MOIS[i], total: Math.round((depensesAnnee||[]).filter(d=>new Date(d.date).getMonth()+1===m).reduce((s,d)=>s+d.montant,0)) }})
-    const patrimoineFinancier = (investissements||[]).reduce((s,i) => s+(i.valeur_actuelle||0), 0)
 
-    // Solde compte joint
-    const { data: depJoint } = await supabase.from('depenses_projet').select('montant,payeur,part_moi').eq('owner_id', user.id)
-    let soldeJoint = 0
-    ;(depJoint||[]).forEach(dep => {
-      const partMoi = dep.part_moi / 100
-      if (dep.payeur === 'moi') soldeJoint += dep.montant * (1 - partMoi)
-      else soldeJoint -= dep.montant * partMoi
+    // Patrimoine : somme valeur_actuelle par vehicule_id (unique) + matériel
+    const vusIds = new Set()
+    let patrimoineFinancier = 0
+    ;(investissements||[]).forEach(i => {
+      const key = i.vehicule_id || i.vehicule
+      if (!vusIds.has(key)) { vusIds.add(key); patrimoineFinancier += i.valeur_actuelle || 0 }
     })
     const patrimoineMateriel = (biens||[]).reduce((s,b) => s+(b.valeur_actuelle||0), 0)
-    setStats({ totalDepenses, totalRevenus, balance: totalRevenus-totalDepenses, parCategorie, parMois, patrimoineTotal: patrimoineFinancier+patrimoineMateriel, soldeJoint })
+
+    // Abonnements actifs ce mois
+    const totalAbonnements = (abonnements||[]).filter(a => a.actif).reduce((s,a) => s+a.montant, 0)
+
+    // Solde compte joint (basé sur config)
+    const { data: cfg } = await supabase.from('config_joint').select('nom_owner,cartes_owner,cartes_partner').eq('owner_id', user.id).maybeSingle()
+    const { data: depJoint } = await supabase.from('depenses_joint').select('montant,payeur,parte,moyen_paiement,part_moi').eq('user_id', user.id)
+    const { data: depProj } = await supabase.from('depenses_projet').select('montant,payeur,carte,moyen_paiement,part_moi').eq('owner_id', user.id)
+    const { data: contribs } = await supabase.from('contributions_joint').select('montant,contributeur').eq('user_id', user.id)
+    const nomOwner = cfg?.nom_owner || ''
+    let soldeJoint = 0
+    const traiter = (liste) => {
+      ;(liste||[]).forEach(d => {
+        const payeur = d.payeur
+        if (!payeur || payeur === 'commun') return
+        const p = (d.part_moi||50)/100
+        const ownerAPaye = payeur === nomOwner
+        soldeJoint += ownerAPaye ? d.montant*(1-p) : -d.montant*p
+      })
+    }
+    traiter(depJoint); traiter(depProj)
+    ;(contribs||[]).forEach(c => { soldeJoint += c.contributeur === nomOwner ? c.montant : -c.montant })
+
+    setStats({ totalDepenses, totalRevenus, balance: totalRevenus-totalDepenses, parCategorie, parMois, patrimoineTotal: patrimoineFinancier+patrimoineMateriel, patrimoineFinancier, patrimoineMateriel, soldeJoint, totalAbonnements })
     setLoading(false)
   }
   if (loading) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 240 }}><div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" /></div>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import FormModal from '../components/FormModal'
+import InvestissementJoint from './InvestissementJoint'
 import PartInput from '../components/PartInput'
 
 const CATS_JOINT = [
@@ -344,9 +345,9 @@ export default function CompteJoint({ user }) {
 
       {/* Tabs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 4, padding: 4, borderRadius: 12, background: 'var(--color-surface)', marginBottom: 16 }}>
-        {[['commun','💸 Commun'],['projets','📁 Projets'],['partage','🔗 Partage'],['config','⚙️ Config']].map(([t,l]) => (
+        {[['commun','💸 Commun'],['projets','📁 Projets'],['investissements','📈 Invest.'],['reglages','⚙️ Réglages']].map(([t,l]) => (
           <button key={t} onClick={() => { setMainTab(t); setProjetActif(null) }}
-            style={{ padding: '9px 4px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 500, background: mainTab === t ? '#6366f1' : 'transparent', color: mainTab === t ? 'white' : 'var(--color-text-muted)' }}>
+            style={{ padding: '9px 4px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 500, background: mainTab === t ? '#6366f1' : 'transparent', color: mainTab === t ? 'white' : 'var(--color-text-muted)' }}>
             {l}
           </button>
         ))}
@@ -624,9 +625,17 @@ export default function CompteJoint({ user }) {
         </div>
       )}
 
-      {/* ── PARTAGE ── */}
-      {mainTab === 'partage' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+      {/* ── INVESTISSEMENTS ── */}
+      {mainTab === 'investissements' && (
+        <InvestissementJoint ownerId={ownerId} nomOwner={nomOwner} nomPartner={nomPartner} />
+      )}
+
+      {/* ── RÉGLAGES ── */}
+      {mainTab === 'reglages' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Partage */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {partage ? (
             <div style={{ ...card, padding: 20 }}>
               <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text)', marginBottom: 12 }}>Partenaire</h3>
@@ -656,79 +665,9 @@ export default function CompteJoint({ user }) {
             </div>
           )}
         </div>
-      )}
 
-      {/* ── CONFIG ── */}
-      {mainTab === 'config' && (
-        <div style={{ ...card, padding: 20 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text)', marginBottom: 4 }}>⚙️ Configuration</h3>
-          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 20 }}>Configure les prénoms et les cartes. La carte utilisée détermine automatiquement qui a payé et si il y a une dette.</p>
-          <form onSubmit={saveConfig} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-            {/* Prénoms */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div>
-                <label style={{ fontSize: 13, fontWeight: 600, color: '#6366f1', display: 'block', marginBottom: 8 }}>👤 Ton prénom</label>
-                <input required value={cfgForm.nom_owner} onChange={e => setCfgForm(f => ({...f, nom_owner: e.target.value}))} placeholder="Damien" style={inp} />
-              </div>
-              <div>
-                <label style={{ fontSize: 13, fontWeight: 600, color: '#ec4899', display: 'block', marginBottom: 8 }}>👥 Prénom partenaire</label>
-                <input required value={cfgForm.nom_partner} onChange={e => setCfgForm(f => ({...f, nom_partner: e.target.value}))} placeholder="Aline" style={inp} />
-              </div>
-            </div>
-
-            {/* Cartes Damien */}
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <label style={{ fontSize: 13, fontWeight: 600, color: '#6366f1' }}>💳 Cartes de {cfgForm.nom_owner || 'toi'}</label>
-                <button type="button" onClick={() => setCfgForm(f => ({...f, cartes_owner: [...f.cartes_owner, '']}))}
-                  style={{ fontSize: 12, padding: '4px 10px', borderRadius: 8, border: '1px dashed #6366f1', background: 'transparent', cursor: 'pointer', color: '#6366f1' }}>+ Ajouter</button>
-              </div>
-              {cfgForm.cartes_owner.map((c, i) => (
-                <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
-                  <input value={c} onChange={e => setCfgForm(f => ({...f, cartes_owner: f.cartes_owner.map((x,j) => j===i ? e.target.value : x)}))} placeholder="Ex: Carte SG, Carte Trade..." style={{ ...inp, flex: 1 }} />
-                  <button type="button" onClick={() => setCfgForm(f => ({...f, cartes_owner: f.cartes_owner.filter((_,j) => j!==i)}))} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#ef4444' }}>×</button>
-                </div>
-              ))}
-            </div>
-
-            {/* Cartes Aline */}
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <label style={{ fontSize: 13, fontWeight: 600, color: '#ec4899' }}>💳 Cartes de {cfgForm.nom_partner || 'partenaire'}</label>
-                <button type="button" onClick={() => setCfgForm(f => ({...f, cartes_partner: [...f.cartes_partner, '']}))}
-                  style={{ fontSize: 12, padding: '4px 10px', borderRadius: 8, border: '1px dashed #ec4899', background: 'transparent', cursor: 'pointer', color: '#ec4899' }}>+ Ajouter</button>
-              </div>
-              {cfgForm.cartes_partner.map((c, i) => (
-                <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
-                  <input value={c} onChange={e => setCfgForm(f => ({...f, cartes_partner: f.cartes_partner.map((x,j) => j===i ? e.target.value : x)}))} placeholder="Ex: Carte Aline..." style={{ ...inp, flex: 1 }} />
-                  <button type="button" onClick={() => setCfgForm(f => ({...f, cartes_partner: f.cartes_partner.filter((_,j) => j!==i)}))} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#ef4444' }}>×</button>
-                </div>
-              ))}
-            </div>
-
-            {/* Cartes communes */}
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <label style={{ fontSize: 13, fontWeight: 600, color: '#10b981' }}>🤝 Cartes communes (pas de dette)</label>
-                <button type="button" onClick={() => setCfgForm(f => ({...f, cartes_communes: [...f.cartes_communes, '']}))}
-                  style={{ fontSize: 12, padding: '4px 10px', borderRadius: 8, border: '1px dashed #10b981', background: 'transparent', cursor: 'pointer', color: '#10b981' }}>+ Ajouter</button>
-              </div>
-              {cfgForm.cartes_communes.map((c, i) => (
-                <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
-                  <input value={c} onChange={e => setCfgForm(f => ({...f, cartes_communes: f.cartes_communes.map((x,j) => j===i ? e.target.value : x)}))} placeholder="Ex: Carte Revolut Joint..." style={{ ...inp, flex: 1 }} />
-                  <button type="button" onClick={() => setCfgForm(f => ({...f, cartes_communes: f.cartes_communes.filter((_,j) => j!==i)}))} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#ef4444' }}>×</button>
-                </div>
-              ))}
-              <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 6, padding: '6px 10px', borderRadius: 8, background: 'rgba(16,185,129,0.06)' }}>
-                💡 Payer avec une carte commune = pot commun utilisé = pas de dette générée entre vous
-              </div>
-            </div>
-
-            <button type="submit" style={{ width: '100%', padding: 12, borderRadius: 12, border: 'none', cursor: 'pointer', fontWeight: 600, color: 'white', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', fontSize: 15 }}>
-              💾 Sauvegarder
-            </button>
-          </form>
+          {/* Configuration */}
+          
         </div>
       )}
 

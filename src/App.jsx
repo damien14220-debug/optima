@@ -9,6 +9,7 @@ import Patrimoine from './pages/Patrimoine'
 import CompteJoint from './pages/CompteJoint'
 import Statistiques from './pages/Statistiques'
 import Parametres from './pages/Parametres'
+import Abonnements from './pages/Abonnements'
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Accueil', icon: '🏠' },
@@ -74,6 +75,7 @@ export default function App() {
       case 'revenus': return <Revenus user={user} />
       case 'budget': return <Budget user={user} />
       case 'patrimoine': return <Patrimoine user={user} />
+      case 'abonnements': return <Abonnements user={user} />
       case 'joint': return <CompteJoint user={user} />
       case 'statistiques': return <Statistiques user={user} />
       case 'parametres': return <Parametres user={user} darkMode={darkMode} setDarkMode={setDarkMode} />
