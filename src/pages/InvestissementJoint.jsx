@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import FormModal from '../components/FormModal'
 
 const ICONES = ['🏦','📈','🥇','🧱','💵','📋','🤝','💎','🪙','📊','🏠','🚗','💻','📱','⌚','🛋️']
 
@@ -74,24 +75,6 @@ export default function InvestissementJoint({ ownerId, nomOwner, nomPartner }) {
 
   const inp = { width: '100%', padding: '8px 12px', borderRadius: 8, fontSize: 14, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }
   const card = { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 16 }
-  const Modal = ({ show, onClose, title, onSubmit, children, color = '#6366f1' }) => !show ? null : (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 16, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
-      <div style={{ width: '100%', maxWidth: 480, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 20, padding: 24, maxHeight: '90vh', overflowY: 'auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-          <h2 style={{ fontSize: 17, fontWeight: 600, color: 'var(--color-text)' }}>{title}</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: 'var(--color-text-muted)' }}>×</button>
-        </div>
-        <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {children}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--color-border)', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-muted)' }}>Annuler</button>
-            <button type="submit" style={{ flex: 1, padding: '10px', borderRadius: 10, border: 'none', cursor: 'pointer', color: 'white', fontWeight: 600, background: color }}>Sauvegarder</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-
   return (
     <div>
       {/* Totaux */}
@@ -233,16 +216,16 @@ export default function InvestissementJoint({ ownerId, nomOwner, nomPartner }) {
       )}
 
       {/* Modals */}
-      <Modal show={showVehForm} onClose={() => { setShowVehForm(false); setEditVeh(null) }} title={editVeh ? 'Modifier' : 'Nouveau véhicule commun'} onSubmit={saveVeh} color="linear-gradient(135deg,#10b981,#06b6d4)">
+      <FormModal show={showVehForm} onClose={() => { setShowVehForm(false); setEditVeh(null) }} title={editVeh ? 'Modifier' : 'Nouveau véhicule commun'} onSubmit={saveVeh} color="linear-gradient(135deg,#10b981,#06b6d4)" submitLabel={editVeh ? 'Modifier' : 'Créer'}>
         <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Nom</label><input required value={vehForm.nom} onChange={e => setVehForm(f=>({...f,nom:e.target.value}))} placeholder="Livret commun, SCPI..." style={inp} /></div>
         <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 6 }}>Icône</label><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{ICONES.map(ic => <button key={ic} type="button" onClick={() => setVehForm(f=>({...f,icone:ic}))} style={{ width: 36, height: 36, borderRadius: 8, border: vehForm.icone===ic?'2px solid #10b981':'1px solid var(--color-border)', background: vehForm.icone===ic?'rgba(16,185,129,0.1)':'transparent', cursor: 'pointer', fontSize: 18 }}>{ic}</button>)}</div></div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 10, background: 'var(--color-bg)' }}>
           <div><div style={{ fontSize: 13, fontWeight: 500 }}>Pilotable</div><div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>Retrait/dépôt libre</div></div>
           <button type="button" onClick={() => setVehForm(f=>({...f,pilotable:!f.pilotable}))} style={{ position: 'relative', width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', background: vehForm.pilotable?'#10b981':'#475569' }}><span style={{ position: 'absolute', top: 2, width: 20, height: 20, borderRadius: '50%', background: 'white', left: vehForm.pilotable?22:2, transition: 'left 0.2s' }} /></button>
         </div>
-      </Modal>
+      </FormModal>
 
-      <Modal show={showMvtForm} onClose={() => setShowMvtForm(false)} title="Nouveau mouvement" onSubmit={saveMvt} color="linear-gradient(135deg,#10b981,#06b6d4)">
+      <FormModal show={showMvtForm} onClose={() => setShowMvtForm(false)} title="Nouveau mouvement" onSubmit={saveMvt} color="linear-gradient(135deg,#10b981,#06b6d4)" submitLabel="Enregistrer">
         <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Véhicule</label><select required value={mvtForm.vehicule_id} onChange={e => setMvtForm(f=>({...f,vehicule_id:e.target.value}))} style={inp}><option value="">Choisir...</option>{vehicules.map(v => <option key={v.id} value={v.id}>{v.icone} {v.nom}</option>)}</select></div>
         <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 6 }}>Type</label><div style={{ display: 'flex', gap: 6 }}>{[['depot','+ Dépôt','#10b981'],['retrait','− Retrait','#ef4444'],['valeur','= MAJ valeur','#6366f1']].map(([t,l,c]) => <button key={t} type="button" onClick={() => setMvtForm(f=>({...f,type:t}))} style={{ flex: 1, padding: '8px', borderRadius: 8, border: mvtForm.type===t?'none':'1px solid var(--color-border)', background: mvtForm.type===t?c:'transparent', color: mvtForm.type===t?'white':'var(--color-text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 500 }}>{l}</button>)}</div></div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -250,9 +233,9 @@ export default function InvestissementJoint({ ownerId, nomOwner, nomPartner }) {
           <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Date</label><input type="date" required value={mvtForm.date} onChange={e => setMvtForm(f=>({...f,date:e.target.value}))} style={inp} /></div>
         </div>
         <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Note</label><input value={mvtForm.note} onChange={e => setMvtForm(f=>({...f,note:e.target.value}))} placeholder="Optionnel..." style={inp} /></div>
-      </Modal>
+      </FormModal>
 
-      <Modal show={showBienForm} onClose={() => { setShowBienForm(false); setEditBien(null) }} title={editBien ? 'Modifier' : 'Nouveau bien commun'} onSubmit={saveBien} color="linear-gradient(135deg,#f59e0b,#ef4444)">
+      <FormModal show={showBienForm} onClose={() => { setShowBienForm(false); setEditBien(null) }} title={editBien ? 'Modifier' : 'Nouveau bien commun'} onSubmit={saveBien} color="linear-gradient(135deg,#f59e0b,#ef4444)" submitLabel={editBien ? 'Modifier' : 'Ajouter'}>
         <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Nom</label><input required value={bienForm.nom} onChange={e => setBienForm(f=>({...f,nom:e.target.value}))} placeholder="Voiture, Frigo..." style={inp} /></div>
         <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 6 }}>Icône</label><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{['🚗','🏍️','🚲','🏠','💻','📱','⌚','🎸','📺','🛋️','❄️','🧺'].map(ic => <button key={ic} type="button" onClick={() => setBienForm(f=>({...f,icone:ic}))} style={{ width: 36, height: 36, borderRadius: 8, border: bienForm.icone===ic?'2px solid #f59e0b':'1px solid var(--color-border)', background: bienForm.icone===ic?'rgba(245,158,11,0.1)':'transparent', cursor: 'pointer', fontSize: 18 }}>{ic}</button>)}</div></div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -261,7 +244,7 @@ export default function InvestissementJoint({ ownerId, nomOwner, nomPartner }) {
         </div>
         <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Valeur actuelle (€)</label><input type="number" step="0.01" min="0" required value={bienForm.valeur_actuelle} onChange={e => setBienForm(f=>({...f,valeur_actuelle:e.target.value}))} style={inp} /></div>
         <div><label style={{ fontSize: 12, color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Note</label><input value={bienForm.note} onChange={e => setBienForm(f=>({...f,note:e.target.value}))} placeholder="Optionnel..." style={inp} /></div>
-      </Modal>
+      </FormModal>
     </div>
   )
 }
